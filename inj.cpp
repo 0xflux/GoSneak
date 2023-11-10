@@ -53,8 +53,6 @@ DWORD getPidByName(const char* processName) {
     char buf[MAX_PATH] = {}; // buffer to store the name of the executable
     size_t charsConverted = 0;
 
-    printf("Process we are injecting into: %s", processName);
-
     // snapshot of all processes in the system
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
