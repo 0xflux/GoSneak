@@ -11,7 +11,7 @@ package main
 
 /*
 #cgo CXXFLAGS: -DUNICODE
-#cgo LDFLAGS: ${SRCDIR}/../c_deps/libinj.a -lstdc++
+#cgo LDFLAGS: ${SRCDIR}/libinj.a -lstdc++
 
 #include <stdlib.h>
 #include <stdint.h>

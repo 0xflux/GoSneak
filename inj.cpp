@@ -17,16 +17,24 @@ extern "C" {
  * 
  * g++ -c -o inj.o inj.cpp -DUNICODE
  * ar rcs libinj.a inj.o
+ * g++ inj.o -o inj.exe // for building just the c injector without go
 */
 
 #define MAX_DLL_PATH 255
 #define ERROR_LOGGING_ENABLED 1
+
+
+int main(int argc, char *argv[]) {
+    int res = openProcAndExec(argv[1], argv[2]); // [1] is dll path, [2] e.g. notepad.exe
+}
+
 
 void logError(const char* message) {
     if (ERROR_LOGGING_ENABLED) {
         std::cerr << "Error: " << message << std::endl;
     }
 }
+
 
 /**
  * @brief Retrieves the Process ID (PID) of a given process by its name.
@@ -45,11 +53,13 @@ DWORD getPidByName(const char* processName) {
     char buf[MAX_PATH] = {}; // buffer to store the name of the executable
     size_t charsConverted = 0;
 
+    printf("Process we are injecting into: %s", processName);
+
     // snapshot of all processes in the system
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
         logError("Failed to create process snapshot");
-        return NULL; // return NULL if snapshot creation fails
+        return 0; // return 0 if snapshot creation fails
     }
 
     // iterate over all processes in the snapshot
@@ -72,7 +82,7 @@ DWORD getPidByName(const char* processName) {
 
     CloseHandle(snapshot); // close the snapshot handle if process not found
     logError("Target process not found");
-    return NULL; // return NULL if process not found
+    return 0; // return 0 if process not found
 }
 
 
@@ -92,7 +102,7 @@ DWORD getPidByName(const char* processName) {
 int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     // validate input params 
     if (pathToDLL == NULL || processToInj == NULL) {
-        logError("Input parameters are null");
+        logError("Invalid usage: inj.exe 'path_to_all.dll' 'process_to_inject_into.exe'. Quitting...");
         return -1; // return error if input params are null
     }
 
