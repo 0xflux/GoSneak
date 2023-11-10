@@ -1,4 +1,5 @@
 #include "inj.h"
+#include "kernel_abstract.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,13 +8,14 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <cwchar>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * to build, 64 bit only right now:
+ * to build, 64 bit only right now (only guaranteed on Win11-23h2):
  * 
  * g++ -c -o inj.o inj.cpp -DUNICODE
  * ar rcs libinj.a inj.o
@@ -33,6 +35,25 @@ void logError(const char* message) {
     if (ERROR_LOGGING_ENABLED) {
         std::cerr << "Error: " << message << std::endl;
     }
+}
+
+HMODULE getModule(LPCWSTR moduleName) {
+    HMODULE hModule = nullptr;
+    
+    hModule = GetModuleHandle(moduleName);
+
+     if (hModule == nullptr) {
+        wchar_t formattedMessage[256];
+        swprintf(formattedMessage, 256, L"Failed to get module %s\n", moduleName);
+        
+        char narrowMessage[256];
+        wcstombs(narrowMessage, formattedMessage, 256);
+
+        logError(narrowMessage);
+        return nullptr;
+    }
+
+    return hModule;
 }
 
 
@@ -113,23 +134,11 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     // safely copy path to DLL into a local buffer
     strncpy(dllPathToInject, pathToDLL, sizeof(dllPathToInject));
     dllPathToInject[sizeof(dllPathToInject) - 1] = '\0'; // ensure null termination
-    size_t dllLength = strlen(dllPathToInject) + 1; // length including null terminator
+    size_t dllPathLength = strlen(dllPathToInject) + 1; // length including null terminator
 
     // get process ID of the target process
     DWORD pid = getPidByName(processToInj);
     if (pid == 0) {
-        return -1;
-    }
-
-    // get handle to the Kernel32.dll and the address of LoadLibraryA
-    HMODULE hK32 = GetModuleHandle(L"Kernel32");
-    if (!hK32) {
-        logError("Failed to get handle to Kernel32.dll");
-        return -1;
-    }
-    FARPROC loadLibA_addr = GetProcAddress(hK32, "LoadLibraryA");
-    if (!loadLibA_addr) {
-        logError("Failed to get address of LoadLibraryA");
         return -1;
     }
 
@@ -140,8 +149,22 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
         return -1;
     }
 
+    // get handle to ntdll
+    HMODULE hNTDLL = getModule(L"ntdll.dll");
+
+    // get handle to the Kernel32.dll and the address of LoadLibraryA
+    HMODULE hK32 = getModule(L"Kernel32");
+    if (!hK32) {
+        logError("Failed to get handle to Kernel32.dll");
+        return -1;
+    }
+    
+    // get modules
+    pNtCreateThreadEx localCreateRemoteThread = (pNtCreateThreadEx)GetProcAddress(hNTDLL, "NtCreateThreadEx");
+    PTHREAD_START_ROUTINE loadlib = (PTHREAD_START_ROUTINE)GetProcAddress(hK32, "LoadLibraryA");
+
     // allocate memory in the target process for the DLL path
-    LPVOID alloc = VirtualAllocEx(hProcess, NULL, dllLength, (MEM_RESERVE | MEM_COMMIT), PAGE_EXECUTE_READWRITE);
+    LPVOID alloc = VirtualAllocEx(hProcess, NULL, dllPathLength, (MEM_RESERVE | MEM_COMMIT), PAGE_EXECUTE_READWRITE);
     if (alloc == NULL) {
         CloseHandle(hProcess);
         logError("Failed to allocate memory in target process");
@@ -149,7 +172,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     }
 
     // write the DLL path to the allocated memory in the target process
-    if (!WriteProcessMemory(hProcess, alloc, dllPathToInject, dllLength, NULL)) {
+    if (!WriteProcessMemory(hProcess, alloc, dllPathToInject, dllPathLength, nullptr)) {
         VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
         CloseHandle(hProcess);
         logError("Failed to write DLL path to process memory");
@@ -161,19 +184,27 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
      * The function pointer LoadLibraryA is used as the starting address for the remote thread, and the allocated
      * memory (containing the DLL path) is passed as an argument to LoadLibraryA. This effectively loads the DLL into the target process.
     */
-    HANDLE remoteThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibA_addr, alloc, 0, NULL);
-    if (remoteThread == NULL) {
+    // NTSTATUS remoteThread = localCreateRemoteThread(&hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibA_addr, alloc, 0, NULL);
+    HANDLE hThread = NULL;
+    OBJECT_ATTRIBUTES OA = { sizeof(OA), NULL };
+    NTSTATUS status = localCreateRemoteThread(&hThread, THREAD_ALL_ACCESS, &OA, hProcess, (PVOID)loadlib, alloc, FALSE, 0, 0, 0, 0);
+
+    if (status != 0x0) {
         VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
         CloseHandle(hProcess);
-        logError("Failed to create remote thread");
+
+        char errorMessage[256];
+        sprintf(errorMessage, "Failed to create remote thread, error: 0x%lx", status);
+        logError(errorMessage);
+
         return -1; // return error if thread creation fails
     }
 
     // wait for the remote thread to complete
-    WaitForSingleObject(remoteThread, INFINITE);
+    WaitForSingleObject(hThread, INFINITE);
 
     // clean up - close handles and free memory
-    CloseHandle(remoteThread);
+    CloseHandle(hThread);
     VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
     CloseHandle(hProcess);
 
