@@ -1,5 +1,4 @@
 #pragma once
-#pragma comment (lib, "ntdll")
 
 #include<Windows.h>
 #include<stdio.h>
@@ -35,7 +34,9 @@ typedef struct _PS_ATTRIBUTE_LIST {
 
 /****** Functions ******/
 
-typedef NTSTATUS(NTAPI* pNtCreateThreadEx) (
+
+extern "C" {
+     NTSTATUS NtCreateThreadEx(
     _Out_    PHANDLE            ThreadHandle,
     _In_     ACCESS_MASK        DesiredAccess,
     _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
@@ -48,3 +49,4 @@ typedef NTSTATUS(NTAPI* pNtCreateThreadEx) (
     _In_     SIZE_T             MaximumStackSize,
     _In_opt_ PPS_ATTRIBUTE_LIST AttributeList
     );
+}

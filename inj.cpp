@@ -25,7 +25,6 @@ extern "C" {
 #define MAX_DLL_PATH 255
 #define ERROR_LOGGING_ENABLED 1
 
-
 int main(int argc, char *argv[]) {
     int res = openProcAndExec(argv[1], argv[2]); // [1] is dll path, [2] e.g. notepad.exe
 }
@@ -37,6 +36,12 @@ void logError(const char* message) {
     }
 }
 
+/**
+ * @brief Finds system module for given module name
+ * 
+ * @param moduleName A string representing the name of the module
+ * 
+*/
 HMODULE getModule(LPCWSTR moduleName) {
     HMODULE hModule = nullptr;
     
@@ -160,7 +165,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     }
     
     // get modules
-    pNtCreateThreadEx localCreateRemoteThread = (pNtCreateThreadEx)GetProcAddress(hNTDLL, "NtCreateThreadEx");
+    // pNtCreateThreadEx localCreateRemoteThread = (pNtCreateThreadEx)GetProcAddress(hNTDLL, "NtCreateThreadEx");
     PTHREAD_START_ROUTINE loadlib = (PTHREAD_START_ROUTINE)GetProcAddress(hK32, "LoadLibraryA");
 
     // allocate memory in the target process for the DLL path
@@ -187,7 +192,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     // NTSTATUS remoteThread = localCreateRemoteThread(&hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibA_addr, alloc, 0, NULL);
     HANDLE hThread = NULL;
     OBJECT_ATTRIBUTES OA = { sizeof(OA), NULL };
-    NTSTATUS status = localCreateRemoteThread(&hThread, THREAD_ALL_ACCESS, &OA, hProcess, (PVOID)loadlib, alloc, FALSE, 0, 0, 0, 0);
+    NTSTATUS status = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, &OA, hProcess, (PVOID)loadlib, alloc, FALSE, 0, 0, 0, 0);
 
     if (status != 0x0) {
         VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);

@@ -280,3 +280,10 @@ bin/
 *.o
 *.a
 *.bin
+*.obj
+*.sqlite
+ProjectSettings.json
+VSWorkspaceState.json
+*.vsidx
+*.db
+*.wsuo
