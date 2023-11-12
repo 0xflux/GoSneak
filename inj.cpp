@@ -25,6 +25,7 @@ extern "C" {
  * My own CGO DLL injector (this was supposed to be modifications but has turned into a rewrite & deeper learning)
  * https://outflank.nl/blog/2019/06/19/red-team-tactics-combining-direct-system-calls-and-srdi-to-bypass-av-edr/
  * https://signal-labs.com/analysis-of-edr-hooks-bypasses-amp-our-rust-sample/
+ * https://codemachine.com/articles/system_call_instructions.html 
  * https://github.com/lsecqt / https://www.youtube.com/@Lsecqt 
  * https://alice.climent-pommeret.red/
  * https://github.com/cr-0w
