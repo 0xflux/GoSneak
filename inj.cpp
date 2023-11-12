@@ -93,14 +93,14 @@ HANDLE getHandleToProcessByName(const char* processName) {
                 status = NtOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &OA, &clientId); // direct call
 
                 if (status == 0x0) {
-                    CloseHandle(snapshot); // close the snapshot handle as it is no longer needed
+                    NtClose(snapshot); // close the snapshot handle as it is no longer needed
                     return hProcess; // return the process ID TODO just return the handle?
                 }
             }
         }
     }
 
-    CloseHandle(snapshot); // close the snapshot handle if process not found
+    NtClose(snapshot); // close the snapshot handle if process not found
     logError("Target process not found");
     return NULL; // return 0 if process not found
 }
@@ -167,7 +167,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     // allocate memory in the target process for the DLL path
     LPVOID alloc = VirtualAllocEx(hProcess, NULL, dllPathLength, (MEM_RESERVE | MEM_COMMIT), PAGE_EXECUTE_READWRITE);
     if (alloc == NULL) {
-        CloseHandle(hProcess);
+        NtClose(hProcess);
         logError("Failed to allocate memory in target process");
         return -1; // return error if memory allocation fails
     }
@@ -175,7 +175,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     // write the DLL path to the allocated memory in the target process
     if (!WriteProcessMemory(hProcess, alloc, dllPathToInject, dllPathLength, nullptr)) {
         VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
-        CloseHandle(hProcess);
+        NtClose(hProcess);
         logError("Failed to write DLL path to process memory");
         return -1; // return error if writing to process memory fails
     }
@@ -191,7 +191,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
 
     if (status != 0x0) {
         VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
-        CloseHandle(hProcess);
+        NtClose(hProcess);
 
         char errorMessage[256];
         sprintf(errorMessage, "Failed to create remote thread, error: 0x%lx", status);
@@ -204,9 +204,9 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     WaitForSingleObject(hThread, INFINITE);
 
     // clean up - close handles and free memory
-    CloseHandle(hThread);
+    NtClose(hThread);
     VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
-    CloseHandle(hProcess);
+    NtClose(hProcess);
 
     return 0;
 }
