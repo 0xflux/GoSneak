@@ -21,7 +21,7 @@ extern "C" {
  * g++ inj.o -o inj.exe // for building just the c injector without go
  * or just use the build bat script :-)
  * 
- * Inspired by research I have conducted form the below sources:
+ * Inspired by research I have conducted from the below sources:
  * My own CGO DLL injector (this was supposed to be modifications but has turned into a rewrite & deeper learning)
  * https://outflank.nl/blog/2019/06/19/red-team-tactics-combining-direct-system-calls-and-srdi-to-bypass-av-edr/
  * https://signal-labs.com/analysis-of-edr-hooks-bypasses-amp-our-rust-sample/
