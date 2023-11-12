@@ -46,15 +46,19 @@ void logError(const char* message) {
 
 
 /**
- * @brief Retrieves the Process ID (PID) of a given process by its name.
+ * @brief Retrieves a handle to a process by its name.
  *
  * This function scans all processes currently running in the system to find a process
  * that matches the specified name. It creates a snapshot of all processes, iterates through
- * this list, and compares each process's name with the provided process name. If a match is found,
- * the function retrieves and returns the PID of that process.
+ * this list, and compares each process's name with the provided process name. When a match is found,
+ * it uses a direct syscall to `NtOpenProcess` to open the process with all possible access rights and
+ * returns a handle to the identified process.
+ *
+ * This approach bypasses the standard Windows API, evading EDR detection and monitoring which target 
+ * higher-level API functions.
  *
  * @param processName A string representing the name of the process to find.
- * @return DWORD Returns the process ID if found, NULL otherwise.
+ * @return HANDLE Returns a handle to the process if found, NULL otherwise.
  */
 HANDLE getHandleToProcessByName(const char* processName) {
     PROCESSENTRY32 entry; // stores process entry information
