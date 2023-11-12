@@ -123,6 +123,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
 
     OBJECT_ATTRIBUTES OA = { sizeof(OA), 0 };
     NTSTATUS status = 0x0;
+    PVOID alloc = NULL;
 
     // validate input params 
     if (pathToDLL == NULL || processToInj == NULL) {
@@ -165,15 +166,16 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     PTHREAD_START_ROUTINE loadlib = (PTHREAD_START_ROUTINE)GetProcAddress(hK32, "LoadLibraryA");
 
     // allocate memory in the target process for the DLL path
-    LPVOID alloc = VirtualAllocEx(hProcess, NULL, dllPathLength, (MEM_RESERVE | MEM_COMMIT), PAGE_EXECUTE_READWRITE);
-    if (alloc == NULL) {
+    status = NtAllocateVirtualMemory(hProcess, &alloc, 0, &dllPathLength, (MEM_RESERVE | MEM_COMMIT), PAGE_EXECUTE_READWRITE);
+    if (status != 0x0) {
         NtClose(hProcess);
         logError("Failed to allocate memory in target process");
         return -1; // return error if memory allocation fails
     }
 
-    // write the DLL path to the allocated memory in the target process
-    if (!WriteProcessMemory(hProcess, alloc, dllPathToInject, dllPathLength, nullptr)) {
+    // write to the allocated memory in the target process
+    status = NtWriteVirtualMemory(hProcess, alloc, dllPathToInject, sizeof(dllPathToInject), NULL);
+    if (status != 0x0) {
         VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
         NtClose(hProcess);
         logError("Failed to write DLL path to process memory");
