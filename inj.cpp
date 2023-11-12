@@ -149,13 +149,6 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
         return -1;
     }
 
-    // get handle to ntdll
-    HMODULE hNTDLL = getModule(L"ntdll.dll");
-    if (!hNTDLL) {
-        logError("Failed to get handle to ntdll.dll");
-        return -1;
-    }
-
     // get handle to the Kernel32.dll and the address of LoadLibraryA
     HMODULE hK32 = getModule(L"Kernel32");
     if (!hK32) {
@@ -188,7 +181,6 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
      * The function pointer LoadLibraryA is used as the starting address for the remote thread, and the allocated
      * memory (containing the DLL path) is passed as an argument to LoadLibraryA. This effectively loads the DLL into the target process.
     */
-    // NTSTATUS remoteThread = localCreateRemoteThread(&hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibA_addr, alloc, 0, NULL);
     HANDLE hThread = NULL;
     status = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, &OA, hProcess, (PVOID)loadlib, alloc, FALSE, 0, 0, 0, 0);
 
