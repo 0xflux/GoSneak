@@ -9,6 +9,8 @@ extern "C" {
 
 int openProcAndExec(const char *pathToDLL, const char *processToInj);
 HMODULE getModule(LPCWSTR moduleName);
+void logError(const char* message);
+HANDLE getHandleToProcessByName(const char* processName);
 
 #ifdef __cplusplus
 }

