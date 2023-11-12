@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
 #include <tlhelp32.h>
 #include <iostream>
 #include <memory>
@@ -20,6 +19,13 @@ extern "C" {
  * g++ -c -o inj.o inj.cpp -DUNICODE
  * ar rcs libinj.a inj.o
  * g++ inj.o -o inj.exe // for building just the c injector without go
+ * or just use the build bat script :-)
+ * 
+ * Inspired by:
+ * My own CGO DLL injector (this was supposed to be modifications but has turned into a rewrite & deeper learning)
+ * https://github.com/lsecqt / https://www.youtube.com/@Lsecqt 
+ * https://alice.climent-pommeret.red/
+ * https://github.com/cr-0w
 */
 
 #define MAX_DLL_PATH 255
@@ -34,33 +40,6 @@ void logError(const char* message) {
     if (ERROR_LOGGING_ENABLED) {
         std::cerr << "Error: " << message << std::endl;
     }
-}
-
-
-/**
- * @brief Finds system module for given module name
- * 
- * @param moduleName A string representing the name of the module. Thanks to https://github.com/cr-0w for 
- * the below function.
- * 
-*/
-HMODULE getModule(LPCWSTR moduleName) {
-    HMODULE hModule = nullptr;
-    
-    hModule = GetModuleHandle(moduleName);
-
-     if (hModule == nullptr) {
-        wchar_t formattedMessage[256];
-        swprintf(formattedMessage, 256, L"Failed to get module %s\n", moduleName);
-        
-        char narrowMessage[256];
-        wcstombs(narrowMessage, formattedMessage, 256);
-
-        logError(narrowMessage);
-        return nullptr;
-    }
-
-    return hModule;
 }
 
 
@@ -238,6 +217,52 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     return 0;
 }
 
+
+/**
+ * @brief Finds system module for given module name
+ * 
+ * @param moduleName A string representing the name of the module. Made some improvements to
+ * cr0w's function with some additional error handling.
+ * Credit for the base func https://github.com/cr-0w
+ * 
+*/
+HMODULE getModule(LPCWSTR moduleName) {
+    if (moduleName == nullptr) {
+        logError("Null module name provided to getModule");
+        return nullptr;
+    }
+
+    HMODULE hModule = GetModuleHandle(moduleName);
+    if (hModule == nullptr) {
+        // get the system error message
+        LPVOID lpMsgBuf;
+        DWORD dw = GetLastError(); 
+
+        FormatMessage(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+            FORMAT_MESSAGE_FROM_SYSTEM |
+            FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr,
+            dw,
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            (LPWSTR) &lpMsgBuf,
+            0, nullptr );
+
+        // convert to a narrow character string and print the error
+        char moduleNameNarrow[256];
+        wcstombs(moduleNameNarrow, moduleName, 256);
+
+        char combinedMessage[512];
+        snprintf(combinedMessage, 512, "Failed to load module %s: %s", moduleNameNarrow, (char*)lpMsgBuf);
+
+        logError(combinedMessage);
+        LocalFree(lpMsgBuf);
+
+        return nullptr;
+    }
+
+    return hModule;
+}
 
 #ifdef __cplusplus
 }

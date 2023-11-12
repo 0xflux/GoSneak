@@ -5,7 +5,10 @@
 extern "C" {
 #endif
 
+#include <windows.h>
+
 int openProcAndExec(const char *pathToDLL, const char *processToInj);
+HMODULE getModule(LPCWSTR moduleName);
 
 #ifdef __cplusplus
 }
