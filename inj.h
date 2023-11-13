@@ -9,8 +9,12 @@ extern "C" {
 
 int openProcAndExec(const char *pathToDLL, const char *processToInj);
 HMODULE getModule(LPCWSTR moduleName);
-void logError(const char* message);
+void logPrintLn(const char* printType, const char* message);
 HANDLE getHandleToProcessByName(const char* processName);
+DWORD getSSN(IN HMODULE hNTDLL, IN LPCSTR NtFunction);
+void printInfo(const char* message);
+void printError(const char* message);
+
 
 #ifdef __cplusplus
 }

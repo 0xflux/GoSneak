@@ -4,6 +4,13 @@
 #include<stdio.h>
 
 /**
+ * Variables to store the SSN numbers of various NTDLL functions
+*/
+
+DWORD wNtOpenProcess;
+
+
+/**
  * Structures for our function prototypes to use for direct access to syscalls / ntdll
  * 
  * Good resources for structs:
