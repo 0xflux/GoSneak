@@ -112,4 +112,11 @@ extern "C" {
         _Out_opt_   PSIZE_T             NumberOfBytesWritten
         );
 
+    // https://github.com/winsiderss/phnt/blob/7c1adb8a7391939dfd684f27a37e31f18d303944/ntobapi.h#L195
+    NTSTATUS NtWaitForSingleObject(
+        _In_ HANDLE Handle,
+        _In_ BOOLEAN Alertable,
+        _In_opt_ PLARGE_INTEGER Timeout
+    );
+
 }

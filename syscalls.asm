@@ -39,7 +39,6 @@ NtWriteVirtualMemory PROC
     ret
 NtWriteVirtualMemory ENDP
 
-; to implement
 public NtWaitForSingleObject
 NtWaitForSingleObject PROC
     mov r10, rcx

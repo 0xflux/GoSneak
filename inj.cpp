@@ -202,7 +202,13 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     }
 
     // wait for the remote thread to complete
-    WaitForSingleObject(hThread, INFINITE);
+    // https://ntdoc.m417z.com/ntwaitforsingleobject
+    status = NtWaitForSingleObject(hThread, FALSE, NULL);
+    if(status != 0x0) {
+        char errorMessage[256];
+        sprintf(errorMessage, "Failed to wait for single object, error: 0x%lx", status);
+        printError(errorMessage);
+    }
 
     // clean up - close handles and free memory
     NtClose(hThread);
