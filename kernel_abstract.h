@@ -7,7 +7,12 @@
  * Variables to store the SSN numbers of various NTDLL functions
 */
 
+DWORD wNtAllocateVirtualMemory;
+DWORD wNtWriteVirtualMemory;
+DWORD wNtCreateThreadEx;
+DWORD wNtWaitForSingleObject;
 DWORD wNtOpenProcess;
+DWORD wNtClose;
 
 
 /**

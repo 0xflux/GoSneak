@@ -120,7 +120,12 @@ int openProcAndExec(const char *pathToDLL, const char *processToInj) {
     // define the SSN of the NTAPI call chain we are bypassing
     // note the variables to store the SSN are declared in kernel_abstract.h
     HMODULE hNTDLL = getModule(L"NTDLL");
+    wNtAllocateVirtualMemory = getSSN(hNTDLL, "NtAllocateVirtualMemory");
+    wNtWriteVirtualMemory = getSSN(hNTDLL, "NtWriteVirtualMemory");
+    wNtCreateThreadEx = getSSN(hNTDLL, "NtCreateThreadEx");
+    wNtWaitForSingleObject = getSSN(hNTDLL, "NtWaitForSingleObject");
     wNtOpenProcess = getSSN(hNTDLL, "NtOpenProcess");
+    wNtClose = getSSN(hNTDLL, "NtClose");
 
     OBJECT_ATTRIBUTES OA = { sizeof(OA), 0 };
     NTSTATUS status = 0x0;
@@ -287,11 +292,11 @@ HMODULE getModule(LPCWSTR moduleName) {
  *               cannot be found or if an error occurs during retrieval
  */
 DWORD getSSN(IN HMODULE dllModule, IN LPCSTR NtFunction) {
-    char logBuffer[256];
 
     FARPROC NtFunctionAddress = GetProcAddress(dllModule, NtFunction);
 
     if (NtFunctionAddress == NULL) {
+        char logBuffer[256];
         sprintf(logBuffer, "Failed to get the address of %s", NtFunction);
         printError(logBuffer);
         return 0;
