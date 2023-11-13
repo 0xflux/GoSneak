@@ -278,7 +278,8 @@ HMODULE getModule(LPCWSTR moduleName) {
  * If successful, we calculate the SSN by accessing the specific offset in the function's
  * memory address.
  * 
- * Inspired by the legend https://github.com/cr-0w
+ * Inspired by https://redops.at/en/blog/direct-syscalls-vs-indirect-syscalls and https://github.com/cr-0w
+ * and added some of my own stuff & explanations.
  *
  * @param dllModule A handle to the loaded NT DLL module (ntdll.dll)
  * @param NtFunction A string specifying the name of the NT function to retrieve the SSN for
@@ -286,20 +287,37 @@ HMODULE getModule(LPCWSTR moduleName) {
  *               cannot be found or if an error occurs during retrieval
  */
 DWORD getSSN(IN HMODULE dllModule, IN LPCSTR NtFunction) {
-    char logBuffer[256]; // buffer for formatted log messages
+    char logBuffer[256];
 
     FARPROC NtFunctionAddress = GetProcAddress(dllModule, NtFunction);
 
     if (NtFunctionAddress == NULL) {
         sprintf(logBuffer, "Failed to get the address of %s", NtFunction);
         printError(logBuffer);
-        return 0; // Return 0 instead of NULL for DWORD
+        return 0;
     }
 
+    /**
+     * 
+     * 
+     *  public NtOpenProcess
+            NtOpenProcess PROC
+                mov r10, rcx                ; 3 bytes
+                mov eax, wNtOpenProcess     ; mov (1 byte) + 28h (4 bytes) = 5 bytes
+                syscall
+                ret
+            NtOpenProcess ENDP
+
+     * With the below, take the byte pointer of the NT Function, then add 4 bytes to the memory location we are pointing to.
+     * Here we will find the SSN (see above math).
+     * Cast this location as a pointer to a double word (i.e. 4 bytes)
+     * Dereference that pointer, to get the underlying value from where we were pointing.
+     * 
+    */
     DWORD NtFunctionSSN = *((PDWORD)((PBYTE)NtFunctionAddress + 4));
 
-    sprintf(logBuffer, "SSN of %s: 0x%lx (Address: 0x%p+0x4)", NtFunction, NtFunctionSSN, (void*)NtFunctionAddress);
-    printInfo(logBuffer);
+    // sprintf(logBuffer, "SSN of %s: 0x%lx (Address: 0x%p+0x4)", NtFunction, NtFunctionSSN, (void*)NtFunctionAddress);
+    // printInfo(logBuffer);
     return NtFunctionSSN;
 }
 
